@@ -511,7 +511,7 @@ def covar_xyxy_to_xywh(output_boxes_covariance):
     return output_boxes_covariance
 
 
-def instances_to_json(instances, img_id, cat_mapping_dict=None):
+def instances_to_json(instances, img_id, cat_mapping_dict=None, cosine_similarity_list=None):
     """
     Dump an "Instances" object to a COCO-format json that's used for evaluation.
 
@@ -560,6 +560,7 @@ def instances_to_json(instances, img_id, cat_mapping_dict=None):
                     "bbox": boxes[k],
                     "score": scores[k],
                     "inter_feat": inter_feat[k],
+                    "cosine_similarity": cosine_similarity_list[k],
                     "logistic_score": logistic_score[k],
                     "cls_prob": pred_cls_probs[k],
                     "bbox_covar": pred_boxes_covariance[k]
@@ -571,6 +572,7 @@ def instances_to_json(instances, img_id, cat_mapping_dict=None):
                     "bbox": boxes[k],
                     "score": scores[k],
                     "inter_feat": inter_feat[k],
+                    "cosine_similarity": cosine_similarity_list[k],
                     "cls_prob": pred_cls_probs[k],
                     "bbox_covar": pred_boxes_covariance[k]
                 }

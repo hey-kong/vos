@@ -7,8 +7,12 @@ import os
 import sys
 import torch
 import tqdm
+import shutil
 from shutil import copyfile
 import numpy as np
+from crop import crop_img, cropped_images_dir
+from encoder import clip_text_features, clip_img_features
+from offline_evaluation.compute_ood_probabilistic_metrics import voc_all_cate
 
 # This is very ugly. Essential for now but should be fixed.
 sys.path.append(os.path.join(core.top_dir(), 'src', 'detr'))
@@ -20,7 +24,8 @@ from detectron2.data import build_detection_test_loader, MetadataCatalog
 # Project imports
 from core.evaluation_tools.evaluation_utils import get_train_contiguous_id_to_test_thing_dataset_id_dict
 from core.setup import setup_config, setup_arg_parser
-from offline_evaluation import compute_average_precision, compute_probabilistic_metrics, compute_ood_probabilistic_metrics, compute_calibration_errors
+from offline_evaluation import compute_average_precision, compute_probabilistic_metrics, \
+    compute_ood_probabilistic_metrics, compute_calibration_errors
 from inference.inference_utils import instances_to_json, get_inference_output_dir, build_predictor
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -77,6 +82,12 @@ def main(args):
 
     final_output_list = []
 
+    # Create saving dir of cropped images
+    if os.path.exists(cropped_images_dir):
+        shutil.rmtree(cropped_images_dir)
+    os.makedirs(cropped_images_dir)
+    text_features = clip_text_features(voc_all_cate)
+
     if not args.eval_only:
         with torch.no_grad():
             with tqdm.tqdm(total=len(test_data_loader)) as pbar:
@@ -84,6 +95,13 @@ def main(args):
                     # Apply corruption
 
                     outputs = predictor(input_im)
+                    predicted_boxes = outputs.pred_boxes.tensor.cpu().numpy()
+                    cosine_similarity_list = []
+                    for i, bbox in enumerate(predicted_boxes):
+                        img_path = crop_img(input_im[0]["file_name"], bbox, i)
+                        img_features = clip_img_features(img_path)
+                        cosine_similarity = img_features @ text_features.T
+                        cosine_similarity_list.append(cosine_similarity.tolist()[0])
 
                     if args.visualize:
                         if not os.path.exists(args.savefigdir):
@@ -96,26 +114,23 @@ def main(args):
                                                       cfg=cfg,
                                                       energy_threshold=8.868)
 
-
                     final_output_list.extend(
                         instances_to_json(
                             outputs,
                             input_im[0]['image_id'],
-                            cat_mapping_dict))
+                            cat_mapping_dict,
+                            cosine_similarity_list))
                     pbar.update(1)
-
 
         big_inference_output_dir = inference_output_dir
         with open(os.path.join(big_inference_output_dir, 'coco_instances_results.json'), 'w') as fp:
             json.dump(final_output_list, fp, indent=4, separators=(',', ': '))
-
 
     if 'ood' in args.test_dataset:
         compute_ood_probabilistic_metrics.main(args, cfg)
     else:
         compute_average_precision.main(args, cfg)
         compute_ood_probabilistic_metrics.main(args, cfg)
-
 
 
 if __name__ == "__main__":
